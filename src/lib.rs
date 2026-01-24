@@ -1,34 +1,47 @@
 #![allow(unexpected_cfgs)]
 
 use solana_program::sysvar::Sysvar;
-
+//声明程序入口
 solana_program::entrypoint!(process_instruction);
 
+//铸造程序
 pub fn process_instruction_mint(
     program_id: &solana_program::pubkey::Pubkey,
     accounts: &[solana_program::account_info::AccountInfo],
     data: &[u8],
 ) -> solana_program::entrypoint::ProgramResult {
     let accounts_iter = &mut accounts.iter();
+    //用户账户
     let account_user = solana_program::account_info::next_account_info(accounts_iter)?;
+    //PDA账户
     let account_user_pda = solana_program::account_info::next_account_info(accounts_iter)?;
+    //系统账户，未使用
     let _ = solana_program::account_info::next_account_info(accounts_iter)?; // Program system
     let _ = solana_program::account_info::next_account_info(accounts_iter)?; // Program sysvar rent
 
     // Only Ada can mint more Thai Baht.
+    // 判断当前传入的账户是否是指定默认的账户，这里是ADA的账户
     assert_eq!(*account_user.key, solana_program::pubkey!("6ASf5EcmmEHTgDJ4X4ZT5vT6iHVJBXPg5AN5YoTCpGWt"));
 
-    // Data account is not initialized. Create an account and write data into it.
+    // PDA账户没有创建就创建
     if **account_user_pda.try_borrow_lamports().unwrap() == 0 {
+        //计算当前数据下最小租金
         let rent_exemption = solana_program::rent::Rent::get()?.minimum_balance(8);
+        //通过用户账户，程序账户，获取碰撞修正值
         let bump_seed =
             solana_program::pubkey::Pubkey::find_program_address(&[&account_user.key.to_bytes()], program_id).1;
+        //创建PDA账户，并签名
         solana_program::program::invoke_signed(
             &solana_program::system_instruction::create_account(
+                //创建使用的租金从用户账户来
                 account_user.key,
+                //创建账户地址
                 account_user_pda.key,
+                //租金，通过计算数据最小的租金获取
                 rent_exemption,
+                //数据大小
                 8,
+                //PDA账户所属owner
                 program_id,
             ),
             accounts,
@@ -37,17 +50,24 @@ pub fn process_instruction_mint(
         account_user_pda.data.borrow_mut().copy_from_slice(&u64::MIN.to_be_bytes());
     }
 
-    // Mint.
+    // Mint. 铸造操作
+    //声明一个数组，大小为8字节，用于存储数据
     let mut buf = [0u8; 8];
+    //读取数据
     buf.copy_from_slice(&account_user_pda.data.borrow());
+    //原值
     let old = u64::from_be_bytes(buf);
     buf.copy_from_slice(&data);
+    //新增值
     let inc = u64::from_be_bytes(buf);
+    //新值 = 原值 + 新增值
     let new = old.checked_add(inc).unwrap();
+    //写入数据
     account_user_pda.data.borrow_mut().copy_from_slice(&new.to_be_bytes());
     Ok(())
 }
 
+//转账程序
 pub fn process_instruction_transfer(
     program_id: &solana_program::pubkey::Pubkey,
     accounts: &[solana_program::account_info::AccountInfo],
@@ -99,6 +119,7 @@ pub fn process_instruction_transfer(
     Ok(())
 }
 
+//程序入口
 pub fn process_instruction(
     program_id: &solana_program::pubkey::Pubkey,
     accounts: &[solana_program::account_info::AccountInfo],
